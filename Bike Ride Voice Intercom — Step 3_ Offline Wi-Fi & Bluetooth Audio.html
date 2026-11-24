@@ -1,0 +1,1475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bike Ride Voice Intercom — Step 3: Offline Wi-Fi &amp; Bluetooth Audio</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    .ptt-button {
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      transition: transform 0.12s ease, box-shadow 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .ptt-button.talking {
+      transform: scale(0.96);
+      box-shadow: 0 0 0 12px rgba(239, 68, 68, 0.22), 0 0 38px rgba(239, 68, 68, 0.48);
+    }
+
+    .ptt-button.live-open {
+      box-shadow: 0 0 0 10px rgba(16, 185, 129, 0.22), 0 0 36px rgba(16, 185, 129, 0.42);
+    }
+
+    @keyframes pulseRing {
+      0% { transform: scale(1); opacity: 0.72; }
+      100% { transform: scale(1.22); opacity: 0; }
+    }
+
+    .pulse-ring {
+      animation: pulseRing 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+
+    .meter-bar {
+      transition: height 70ms ease-out, background-color 120ms ease;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-3 sm:p-5">
+  <main class="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden">
+    <!-- Top Hardware Header -->
+    <header class="px-5 py-4 border-b border-slate-800 flex items-center justify-between gap-2">
+      <div class="flex items-center gap-3 min-w-0">
+        <div id="statusLed" class="w-3.5 h-3.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.85)] shrink-0 transition-colors"></div>
+        <div class="min-w-0">
+          <h1 class="text-base font-bold tracking-tight text-white truncate">Bike Ride Intercom</h1>
+          <p class="text-xs text-slate-400 truncate">Step 3 · Offline Wi-Fi &amp; Bluetooth Audio</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button
+          id="windToggle"
+          type="button"
+          aria-pressed="true"
+          title="Toggle wind and background noise suppression"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-colors"
+        >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"></path>
+            <path d="M9.6 4.6A2 2 0 1 1 11 8H2"></path>
+            <path d="M12.6 19.4A2 2 0 1 0 14 16H2"></path>
+          </svg>
+          <span id="windLabel">Wind Filter</span>
+        </button>
+
+        <button
+          id="chimeToggle"
+          type="button"
+          aria-pressed="true"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+        >
+          <svg id="chimeIconOn" class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+          <svg id="chimeIconOff" class="w-3.5 h-3.5 text-slate-500 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <line x1="23" y1="9" x2="17" y2="15"></line>
+            <line x1="17" y1="9" x2="23" y2="15"></line>
+          </svg>
+          <span id="chimeLabel">Chime On</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Ride Room Channel Bar -->
+    <section class="px-5 py-3.5 bg-slate-950/60 border-b border-slate-800">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Ride Code</span>
+          <span id="roomCodeBadge" class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono text-sm font-bold text-amber-300 tracking-wider">RIDE-4821</span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button
+            id="copyCodeBtn"
+            type="button"
+            class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition-colors"
+          >
+            Copy Code
+          </button>
+          <button
+            id="toggleRoomEditBtn"
+            type="button"
+            class="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-xs font-medium text-amber-300 border border-amber-500/30 transition-colors"
+          >
+            Join / Name
+          </button>
+        </div>
+      </div>
+
+      <!-- Expandable Join Room / Rider Name Form -->
+      <form id="roomEditPanel" class="hidden mt-3 pt-3 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div>
+          <label for="riderNameInput" class="block text-[11px] font-medium text-slate-400 mb-1">Your Rider Name</label>
+          <input
+            id="riderNameInput"
+            type="text"
+            maxlength="24"
+            value="Lead Rider"
+            class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-amber-400"
+          />
+        </div>
+        <div>
+          <label for="roomCodeInput" class="block text-[11px] font-medium text-slate-400 mb-1">Ride Channel Code</label>
+          <div class="flex gap-1.5">
+            <input
+              id="roomCodeInput"
+              type="text"
+              maxlength="12"
+              value="RIDE-4821"
+              class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 font-mono text-xs uppercase text-white focus:outline-none focus:border-amber-400"
+            />
+            <button
+              type="submit"
+              class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shrink-0 transition-colors"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <!-- Offline Wi-Fi P2P & Bluetooth Headset Bar -->
+    <section class="px-5 py-3 bg-slate-900/90 border-b border-slate-800 space-y-2.5">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <span id="p2pStatusDot" class="w-2 h-2 rounded-full bg-sky-400"></span>
+          <span id="p2pStatusText" class="text-xs font-medium text-slate-300">Offline Local Wi-Fi Ready (No Server)</span>
+        </div>
+        <button
+          id="toggleOfflinePairBtn"
+          type="button"
+          class="px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-xs font-semibold transition-colors"
+        >
+          Offline Wi-Fi Pair
+        </button>
+      </div>
+
+      <!-- Bluetooth Helmet / Mic Selector -->
+      <div class="flex items-center gap-2">
+        <label for="micSelect" class="text-[11px] font-medium text-slate-400 shrink-0">Headset / Mic:</label>
+        <select
+          id="micSelect"
+          class="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-slate-200 focus:outline-none focus:border-sky-400"
+        >
+          <option value="default">Default Mic / Paired Bluetooth Headset</option>
+        </select>
+        <button
+          id="refreshMicsBtn"
+          type="button"
+          class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-medium text-slate-300 border border-slate-700 shrink-0 transition-colors"
+        >
+          Scan
+        </button>
+      </div>
+
+      <!-- Expandable Serverless Offline WebRTC Pairing Drawer -->
+      <div id="offlinePairPanel" class="hidden pt-3 border-t border-slate-800 space-y-3">
+        <div class="p-3 rounded-xl bg-sky-500/10 border border-sky-500/25 text-[11px] text-sky-200 leading-relaxed">
+          <strong class="font-semibold text-sky-100">How Offline Wi-Fi Pairing Works:</strong> One rider turns on their phone's Wi-Fi Hotspot (mobile data can be off). Both riders open this page and swap the short pairing code below to stream live voice directly phone-to-phone with zero internet.
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            id="hostCreateOfferBtn"
+            type="button"
+            class="px-3 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold transition-colors"
+          >
+            1. Host: Create Code
+          </button>
+          <button
+            id="guestCreateAnswerBtn"
+            type="button"
+            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 text-xs font-semibold transition-colors"
+          >
+            2. Rider: Make Reply
+          </button>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label for="localSignalBox" class="text-[11px] font-medium text-slate-400">Your Pairing Code (Share with nearby rider)</label>
+            <button id="copySignalBtn" type="button" class="text-[11px] font-semibold text-sky-400 hover:text-sky-300">Copy</button>
+          </div>
+          <textarea
+            id="localSignalBox"
+            rows="2"
+            readonly
+            placeholder="Tap 'Host: Create Code' or 'Rider: Make Reply' to generate a local Wi-Fi code..."
+            class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 font-mono text-[11px] text-slate-300 focus:outline-none"
+          ></textarea>
+        </div>
+
+        <div>
+          <label for="remoteSignalBox" class="block text-[11px] font-medium text-slate-400 mb-1">Paste Other Rider's Code Here</label>
+          <textarea
+            id="remoteSignalBox"
+            rows="2"
+            placeholder="Paste Host Code (if joining) or Reply Code (if hosting)..."
+            class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 font-mono text-[11px] text-white focus:outline-none focus:border-sky-400"
+          ></textarea>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button
+            id="connectRemoteBtn"
+            type="button"
+            class="flex-1 px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-colors"
+          >
+            3. Host: Connect Live Voice
+          </button>
+          <button
+            id="disconnectP2pBtn"
+            type="button"
+            class="hidden px-3 py-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 text-xs font-semibold transition-colors"
+          >
+            Disconnect
+          </button>
+        </div>
+
+        <p id="p2pFeedback" class="text-[11px] text-slate-400 min-h-[16px]"></p>
+      </div>
+    </section>
+
+    <!-- Hidden audio player for incoming live P2P rider voice -->
+    <audio id="remoteAudio" autoplay playsinline class="hidden"></audio>
+
+    <!-- Main Bike-Friendly Voice Control Area -->
+    <section class="px-5 pt-5 pb-4 text-center">
+      <!-- Talk Mode Switcher: Hands-Free vs Push-to-Talk -->
+      <div class="inline-grid grid-cols-2 p-1 rounded-2xl bg-slate-950 border border-slate-800 mb-4 w-full max-w-xs">
+        <button
+          id="modeHandsFreeBtn"
+          type="button"
+          class="px-3 py-2 rounded-xl text-xs font-semibold transition-colors bg-emerald-500 text-slate-950"
+        >
+          Hands-Free (Ride)
+        </button>
+        <button
+          id="modePttBtn"
+          type="button"
+          class="px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-slate-400 hover:text-slate-200"
+        >
+          Push-to-Talk
+        </button>
+      </div>
+
+      <div>
+        <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-800/90 border border-slate-700/80 text-xs font-medium text-slate-200 mb-5">
+          <span id="statusText">Standby — Tap big button for hands-free live mic</span>
+        </div>
+      </div>
+
+      <!-- Huge Glove-Friendly Talk / Mute Button -->
+      <div class="relative flex items-center justify-center my-2">
+        <div id="pulseRing" class="hidden absolute w-48 h-48 rounded-full border-2 border-emerald-400/75 pulse-ring pointer-events-none"></div>
+        <button
+          id="pttButton"
+          type="button"
+          class="ptt-button relative z-10 w-48 h-48 rounded-full bg-gradient-to-b from-slate-800 to-slate-900 border-4 border-slate-700 hover:border-emerald-400/70 shadow-xl flex flex-col items-center justify-center gap-2 focus:outline-none focus:ring-4 focus:ring-emerald-500/30 cursor-pointer"
+        >
+          <svg id="micIcon" class="w-12 h-12 text-emerald-400 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="22"></line>
+          </svg>
+          <span id="pttLabel" class="text-sm font-extrabold tracking-wide text-white">TAP TO GO LIVE</span>
+          <span id="timerLabel" class="text-xs font-mono text-slate-400">0.0s</span>
+        </button>
+      </div>
+
+      <!-- Live Voice Level Meter (AnalyserNode) -->
+      <div class="mt-4 flex flex-col items-center">
+        <div id="levelMeter" class="flex items-end justify-center gap-1.5 h-8 px-4" aria-label="Live microphone level">
+          <div class="meter-bar w-2 h-1.5 rounded-full bg-slate-700"></div>
+          <div class="meter-bar w-2 h-1.5 rounded-full bg-slate-700"></div>
+          <div class="meter-bar w-2 h-1.5 rounded-full bg-slate-700"></div>
+          <div class="meter-bar w-2 h-1.5 rounded-full bg-slate-700"></div>
+          <div class="meter-bar w-2 h-1.5 rounded-full bg-slate-700"></div>
+          <div class="meter-bar w-2 h-1.5 rounded-full bg-slate-700"></div>
+          <div class="meter-bar w-2 h-1.5 rounded-full bg-slate-700"></div>
+          <div class="meter-bar w-2 h-1.5 rounded-full bg-slate-700"></div>
+          <div class="meter-bar w-2 h-1.5 rounded-full bg-slate-700"></div>
+          <div class="meter-bar w-2 h-1.5 rounded-full bg-slate-700"></div>
+        </div>
+        <span id="meterCaption" class="text-[11px] text-slate-500 mt-1">Voice level meter · Wind filter active</span>
+      </div>
+
+      <!-- Quick Toggles -->
+      <div class="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-slate-400">
+        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+          <input id="autoPlayToggle" type="checkbox" checked class="w-4 h-4 rounded accent-emerald-500 bg-slate-800 border-slate-600" />
+          <span>Auto-play back (Self-Test)</span>
+        </label>
+        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+          <input id="spokenAlertsToggle" type="checkbox" checked class="w-4 h-4 rounded accent-amber-500 bg-slate-800 border-slate-600" />
+          <span>Speak quick alerts aloud</span>
+        </label>
+      </div>
+
+      <!-- Mic Notice Banner -->
+      <div id="micNotice" class="hidden mt-4 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-left">
+        <p id="micNoticeText" class="text-xs text-amber-200 leading-relaxed"></p>
+        <button
+          id="demoTestBtn"
+          type="button"
+          class="mt-2.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 text-xs font-medium border border-amber-400/30 transition-colors"
+        >
+          Send Simulated Test Chime
+        </button>
+      </div>
+    </section>
+
+    <!-- One-Tap Glove-Friendly Bike Ride Callouts -->
+    <section class="px-5 py-4 border-t border-slate-800 bg-slate-900/70">
+      <div class="flex items-center justify-between mb-2.5">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Quick Ride Alerts</h2>
+        <span class="text-[11px] text-slate-500">1-tap broadcast</span>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2.5">
+        <button
+          type="button"
+          data-alert="hazard"
+          class="quick-alert-btn flex items-center justify-center gap-2 py-3.5 px-3 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 active:scale-95 border border-amber-500/35 text-amber-200 text-sm font-bold transition-all"
+        >
+          <span>Hazard</span>
+        </button>
+        <button
+          type="button"
+          data-alert="slow"
+          class="quick-alert-btn flex items-center justify-center gap-2 py-3.5 px-3 rounded-2xl bg-orange-500/15 hover:bg-orange-500/25 active:scale-95 border border-orange-500/35 text-orange-200 text-sm font-bold transition-all"
+        >
+          <span>Slow Down</span>
+        </button>
+        <button
+          type="button"
+          data-alert="stop"
+          class="quick-alert-btn flex items-center justify-center gap-2 py-3.5 px-3 rounded-2xl bg-red-500/15 hover:bg-red-500/25 active:scale-95 border border-red-500/35 text-red-200 text-sm font-bold transition-all"
+        >
+          <span>Stop Ahead</span>
+        </button>
+        <button
+          type="button"
+          data-alert="clear"
+          class="quick-alert-btn flex items-center justify-center gap-2 py-3.5 px-3 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 active:scale-95 border border-emerald-500/35 text-emerald-200 text-sm font-bold transition-all"
+        >
+          <span>All Clear</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Connected Ride Group Roster -->
+    <section class="px-5 py-4 border-t border-slate-800 bg-slate-950/40">
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <div>
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Riders in Channel (<span id="riderCount">1</span>)
+          </h2>
+          <p id="rosterSubtitle" class="text-[11px] text-slate-500">Use Offline Wi-Fi Pair above or add a practice rider</p>
+        </div>
+        <button
+          id="addPracticeRiderBtn"
+          type="button"
+          class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition-colors shrink-0"
+        >
+          + Practice Rider
+        </button>
+      </div>
+
+      <ul id="riderList" class="space-y-2"></ul>
+    </section>
+
+    <!-- Recent Transmissions & Ride Comms Log -->
+    <section class="px-5 py-4 bg-slate-950/70 border-t border-slate-800">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Ride Comms Log</h2>
+        <button
+          id="clearLogBtn"
+          type="button"
+          class="text-xs text-slate-500 hover:text-slate-300 transition-colors hidden"
+        >
+          Clear
+        </button>
+      </div>
+
+      <div id="emptyLog" class="text-center py-5 px-4 rounded-2xl border border-dashed border-slate-800 text-xs text-slate-500">
+        No voice clips or alerts yet. Go live above or tap a Quick Ride Alert to test.
+      </div>
+
+      <ul id="transmissionList" class="space-y-2 max-h-48 overflow-y-auto pr-1"></ul>
+    </section>
+  </main>
+
+  <script>
+    // =========================================================================
+    // PART 1: STATE & DOM ELEMENTS
+    // =========================================================================
+    const PRACTICE_ROSTER_PRESETS = [
+      { name: 'Maya', role: 'Mid-Pack' },
+      { name: 'Dev', role: 'Sweeper' },
+      { name: 'Sam', role: 'Tail Rider' },
+      { name: 'Asha', role: 'Navigator' }
+    ];
+
+    const ALERT_CONFIG = {
+      hazard: { label: 'Hazard Ahead', speech: 'Hazard ahead!', tone: [780, 520, 780] },
+      slow:   { label: 'Slow Down',    speech: 'Slow down!',    tone: [620, 440] },
+      stop:   { label: 'Stop Ahead',   speech: 'Stopping ahead!', tone: [880, 880, 440] },
+      clear:  { label: 'All Clear',    speech: 'All clear!',    tone: [523, 659, 784] }
+    };
+
+    const state = {
+      mode: 'handsfree',
+      riderName: 'Lead Rider',
+      roomCode: 'RIDE-4821',
+      selectedMicId: 'default',
+      isHolding: false,
+      isRecording: false,
+      chimeEnabled: true,
+      windFilterEnabled: true,
+      autoPlay: true,
+      spokenAlerts: true,
+      mediaRecorder: null,
+      activeStream: null,
+      audioChunks: [],
+      recordStartTime: 0,
+      timerInterval: null,
+      meterFrame: null,
+      analyser: null,
+      sourceNode: null,
+      transmissions: [],
+      practiceRiders: [],
+      practiceIndex: 0,
+      audioCtx: null,
+      // Offline Local Wi-Fi WebRTC State
+      peerConnection: null,
+      dataChannel: null,
+      p2pConnected: false,
+      p2pStream: null
+    };
+
+    const pttButton = document.getElementById('pttButton');
+    const pttLabel = document.getElementById('pttLabel');
+    const timerLabel = document.getElementById('timerLabel');
+    const statusLed = document.getElementById('statusLed');
+    const statusText = document.getElementById('statusText');
+    const micIcon = document.getElementById('micIcon');
+    const pulseRing = document.getElementById('pulseRing');
+    const levelMeter = document.getElementById('levelMeter');
+    const meterBars = Array.from(levelMeter.querySelectorAll('.meter-bar'));
+    const meterCaption = document.getElementById('meterCaption');
+
+    const modeHandsFreeBtn = document.getElementById('modeHandsFreeBtn');
+    const modePttBtn = document.getElementById('modePttBtn');
+    const windToggle = document.getElementById('windToggle');
+    const windLabel = document.getElementById('windLabel');
+    const chimeToggle = document.getElementById('chimeToggle');
+    const chimeLabel = document.getElementById('chimeLabel');
+    const chimeIconOn = document.getElementById('chimeIconOn');
+    const chimeIconOff = document.getElementById('chimeIconOff');
+    const autoPlayToggle = document.getElementById('autoPlayToggle');
+    const spokenAlertsToggle = document.getElementById('spokenAlertsToggle');
+
+    const roomCodeBadge = document.getElementById('roomCodeBadge');
+    const copyCodeBtn = document.getElementById('copyCodeBtn');
+    const toggleRoomEditBtn = document.getElementById('toggleRoomEditBtn');
+    const roomEditPanel = document.getElementById('roomEditPanel');
+    const riderNameInput = document.getElementById('riderNameInput');
+    const roomCodeInput = document.getElementById('roomCodeInput');
+
+    const p2pStatusDot = document.getElementById('p2pStatusDot');
+    const p2pStatusText = document.getElementById('p2pStatusText');
+    const toggleOfflinePairBtn = document.getElementById('toggleOfflinePairBtn');
+    const offlinePairPanel = document.getElementById('offlinePairPanel');
+    const hostCreateOfferBtn = document.getElementById('hostCreateOfferBtn');
+    const guestCreateAnswerBtn = document.getElementById('guestCreateAnswerBtn');
+    const localSignalBox = document.getElementById('localSignalBox');
+    const remoteSignalBox = document.getElementById('remoteSignalBox');
+    const copySignalBtn = document.getElementById('copySignalBtn');
+    const connectRemoteBtn = document.getElementById('connectRemoteBtn');
+    const disconnectP2pBtn = document.getElementById('disconnectP2pBtn');
+    const p2pFeedback = document.getElementById('p2pFeedback');
+    const remoteAudio = document.getElementById('remoteAudio');
+
+    const micSelect = document.getElementById('micSelect');
+    const refreshMicsBtn = document.getElementById('refreshMicsBtn');
+
+    const riderCount = document.getElementById('riderCount');
+    const rosterSubtitle = document.getElementById('rosterSubtitle');
+    const riderList = document.getElementById('riderList');
+    const addPracticeRiderBtn = document.getElementById('addPracticeRiderBtn');
+
+    const micNotice = document.getElementById('micNotice');
+    const micNoticeText = document.getElementById('micNoticeText');
+    const demoTestBtn = document.getElementById('demoTestBtn');
+    const emptyLog = document.getElementById('emptyLog');
+    const transmissionList = document.getElementById('transmissionList');
+    const clearLogBtn = document.getElementById('clearLogBtn');
+    const quickAlertButtons = document.querySelectorAll('.quick-alert-btn');
+
+    // =========================================================================
+    // PART 2: INTERCOM CHIMES & ALERT TONES (WEB AUDIO API)
+    // =========================================================================
+    function getAudioContext() {
+      if (!state.audioCtx) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          state.audioCtx = new AudioCtx();
+        }
+      }
+      if (state.audioCtx && state.audioCtx.state === 'suspended') {
+        state.audioCtx.resume().catch(() => {});
+      }
+      return state.audioCtx;
+    }
+
+    function playChime(type) {
+      if (!state.chimeEnabled) return;
+      const ctx = getAudioContext();
+      if (!ctx) return;
+
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (type === 'start') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, now);
+        osc.frequency.setValueAtTime(880.0, now + 0.08);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.exponentialRampToValueAtTime(0.14, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+        osc.start(now);
+        osc.stop(now + 0.23);
+      } else {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(660.0, now);
+        osc.frequency.setValueAtTime(440.0, now + 0.06);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.exponentialRampToValueAtTime(0.11, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+        osc.start(now);
+        osc.stop(now + 0.17);
+      }
+    }
+
+    function playToneSequence(frequencies) {
+      if (!state.chimeEnabled) return;
+      const ctx = getAudioContext();
+      if (!ctx) return;
+
+      let offset = ctx.currentTime;
+      frequencies.forEach((freq) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, offset);
+        gain.gain.setValueAtTime(0.001, offset);
+        gain.gain.exponentialRampToValueAtTime(0.16, offset + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, offset + 0.11);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(offset);
+        osc.stop(offset + 0.12);
+        offset += 0.13;
+      });
+    }
+
+    // =========================================================================
+    // PART 3: BLUETOOTH HEADSET & AUDIO DEVICE PICKER
+    // =========================================================================
+    function buildAudioConstraints() {
+      const constraints = {
+        noiseSuppression: state.windFilterEnabled,
+        echoCancellation: state.windFilterEnabled,
+        autoGainControl: state.windFilterEnabled
+      };
+      if (state.selectedMicId && state.selectedMicId !== 'default') {
+        constraints.deviceId = { exact: state.selectedMicId };
+      }
+      return constraints;
+    }
+
+    async function refreshAudioInputs() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+        return;
+      }
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const inputs = devices.filter((d) => d.kind === 'audioinput');
+        const prev = state.selectedMicId;
+        micSelect.innerHTML = '<option value="default">Default Mic / Paired Bluetooth Headset</option>';
+
+        inputs.forEach((device, idx) => {
+          if (!device.deviceId || device.deviceId === 'default') return;
+          const opt = document.createElement('option');
+          opt.value = device.deviceId;
+          opt.textContent = device.label || `Audio Input ${idx + 1} (Grant mic access to see name)`;
+          micSelect.appendChild(opt);
+        });
+
+        if (Array.from(micSelect.options).some((o) => o.value === prev)) {
+          micSelect.value = prev;
+        }
+      } catch (e) {}
+    }
+
+    // =========================================================================
+    // PART 4: OFFLINE LOCAL WI-FI WEBRTC PAIRING (ZERO INTERNET SERVER)
+    // =========================================================================
+    function waitForIceGathering(pc) {
+      return new Promise((resolve) => {
+        if (pc.iceGatheringState === 'complete') {
+          resolve();
+          return;
+        }
+        const timer = setTimeout(() => resolve(), 1800);
+        pc.addEventListener('icegatheringstatechange', () => {
+          if (pc.iceGatheringState === 'complete') {
+            clearTimeout(timer);
+            resolve();
+          }
+        });
+      });
+    }
+
+    function encodeSignal(desc) {
+      return btoa(unescape(encodeURIComponent(JSON.stringify(desc))));
+    }
+
+    function decodeSignal(str) {
+      return JSON.parse(decodeURIComponent(escape(atob(str.trim()))));
+    }
+
+    function setupDataChannel(channel) {
+      state.dataChannel = channel;
+      channel.addEventListener('message', (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'alert' && ALERT_CONFIG[msg.alertKey]) {
+            const cfg = ALERT_CONFIG[msg.alertKey];
+            playToneSequence(cfg.tone);
+            if (state.spokenAlerts && 'speechSynthesis' in window) {
+              try {
+                window.speechSynthesis.cancel();
+                window.speechSynthesis.speak(new SpeechSynthesisUtterance(cfg.speech));
+              } catch (e) {}
+            }
+            addTransmission({
+              id: Date.now().toString(),
+              kind: 'alert',
+              alertKey: msg.alertKey,
+              label: cfg.label,
+              sender: msg.sender || 'Paired Rider',
+              url: null,
+              duration: 'Live Wi-Fi Alert',
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            });
+          }
+        } catch (e) {}
+      });
+    }
+
+    async function initLocalPeerConnection() {
+      closeP2pConnection(false);
+
+      if (typeof RTCPeerConnection === 'undefined') {
+        p2pFeedback.textContent = 'WebRTC is not supported in this browser.';
+        return null;
+      }
+
+      // Empty iceServers keeps pairing 100% local on your Wi-Fi hotspot (offline!)
+      const pc = new RTCPeerConnection({ iceServers: [] });
+      state.peerConnection = pc;
+
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints() });
+          state.p2pStream = stream;
+          stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+          refreshAudioInputs();
+        }
+      } catch (e) {
+        p2pFeedback.textContent = 'Pairing created in data-only mode (microphone permission unavailable here).';
+      }
+
+      pc.addEventListener('track', (event) => {
+        if (event.streams && event.streams[0]) {
+          remoteAudio.srcObject = event.streams[0];
+          remoteAudio.play().catch(() => {});
+        }
+      });
+
+      pc.addEventListener('datachannel', (event) => {
+        setupDataChannel(event.channel);
+      });
+
+      pc.addEventListener('connectionstatechange', () => {
+        const s = pc.connectionState;
+        if (s === 'connected') {
+          state.p2pConnected = true;
+          p2pStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]';
+          p2pStatusText.textContent = 'Live Offline Wi-Fi Voice Connected';
+          p2pFeedback.textContent = 'Connected directly over local Wi-Fi! Live voice and Quick Ride Alerts are active.';
+          disconnectP2pBtn.classList.remove('hidden');
+          rosterSubtitle.textContent = 'Direct offline Wi-Fi voice link active';
+          renderRiders();
+        } else if (s === 'disconnected' || s === 'failed' || s === 'closed') {
+          state.p2pConnected = false;
+          p2pStatusDot.className = 'w-2 h-2 rounded-full bg-sky-400';
+          p2pStatusText.textContent = 'Offline Local Wi-Fi Ready (No Server)';
+          disconnectP2pBtn.classList.add('hidden');
+          rosterSubtitle.textContent = 'Use Offline Wi-Fi Pair above or add a practice rider';
+          renderRiders();
+        }
+      });
+
+      return pc;
+    }
+
+    function closeP2pConnection(resetText = true) {
+      if (state.dataChannel) {
+        try { state.dataChannel.close(); } catch (e) {}
+        state.dataChannel = null;
+      }
+      if (state.peerConnection) {
+        try { state.peerConnection.close(); } catch (e) {}
+        state.peerConnection = null;
+      }
+      if (state.p2pStream) {
+        state.p2pStream.getTracks().forEach((t) => t.stop());
+        state.p2pStream = null;
+      }
+      state.p2pConnected = false;
+      disconnectP2pBtn.classList.add('hidden');
+      p2pStatusDot.className = 'w-2 h-2 rounded-full bg-sky-400';
+      p2pStatusText.textContent = 'Offline Local Wi-Fi Ready (No Server)';
+      if (resetText) {
+        p2pFeedback.textContent = 'Disconnected offline Wi-Fi link.';
+      }
+      renderRiders();
+    }
+
+    // =========================================================================
+    // PART 5: LIVE VOICE LEVEL METER (ANALYSERNODE)
+    // =========================================================================
+    function startLevelMeter(stream) {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+
+      stopLevelMeter();
+      state.sourceNode = ctx.createMediaStreamSource(stream);
+      state.analyser = ctx.createAnalyser();
+      state.analyser.fftSize = 64;
+      state.sourceNode.connect(state.analyser);
+
+      const data = new Uint8Array(state.analyser.frequencyBinCount);
+
+      function draw() {
+        if (!state.isRecording || !state.analyser) return;
+        state.analyser.getByteFrequencyData(data);
+
+        meterBars.forEach((bar, idx) => {
+          const val = data[idx + 1] || 0;
+          const pct = Math.min(100, Math.max(18, Math.round((val / 255) * 100)));
+          bar.style.height = `${Math.round((pct / 100) * 30)}px`;
+          if (pct > 70) {
+            bar.className = 'meter-bar w-2 rounded-full bg-amber-400';
+          } else if (pct > 30) {
+            bar.className = 'meter-bar w-2 rounded-full bg-emerald-400';
+          } else {
+            bar.className = 'meter-bar w-2 rounded-full bg-emerald-600/70';
+          }
+        });
+
+        state.meterFrame = requestAnimationFrame(draw);
+      }
+
+      draw();
+    }
+
+    function stopLevelMeter() {
+      if (state.meterFrame) {
+        cancelAnimationFrame(state.meterFrame);
+        state.meterFrame = null;
+      }
+      if (state.sourceNode) {
+        try { state.sourceNode.disconnect(); } catch (e) {}
+        state.sourceNode = null;
+      }
+      state.analyser = null;
+      meterBars.forEach((bar) => {
+        bar.style.height = '6px';
+        bar.className = 'meter-bar w-2 rounded-full bg-slate-700';
+      });
+    }
+
+    function flashMeterBurst() {
+      meterBars.forEach((bar, idx) => {
+        const h = 10 + ((idx % 3) * 7);
+        bar.style.height = `${h}px`;
+        bar.className = 'meter-bar w-2 rounded-full bg-amber-400';
+      });
+      setTimeout(() => {
+        if (!state.isRecording) stopLevelMeter();
+      }, 320);
+    }
+
+    // =========================================================================
+    // PART 6: MICROPHONE CAPTURE (MEDIARECORDER + WIND NOISE SUPPRESSION)
+    // =========================================================================
+    async function startTalking() {
+      if (state.isHolding || state.isRecording) return;
+      state.isHolding = true;
+      micNotice.classList.add('hidden');
+      setVisualState('connecting');
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        state.isHolding = false;
+        setVisualState('idle');
+        showMicNotice('Microphone recording is unavailable here. You can still test Quick Ride Alerts, chimes, and offline pairing codes.');
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints() });
+        refreshAudioInputs();
+
+        if (!state.isHolding) {
+          stream.getTracks().forEach((t) => t.stop());
+          setVisualState('idle');
+          return;
+        }
+
+        state.activeStream = stream;
+        state.audioChunks = [];
+
+        const recorder = new MediaRecorder(stream);
+        state.mediaRecorder = recorder;
+
+        recorder.addEventListener('dataavailable', (event) => {
+          if (event.data && event.data.size > 0) {
+            state.audioChunks.push(event.data);
+          }
+        });
+
+        recorder.addEventListener('stop', () => {
+          const durationSec = Math.max(0.1, (Date.now() - state.recordStartTime) / 1000);
+          const mimeType = recorder.mimeType || 'audio/webm';
+          const blob = new Blob(state.audioChunks, { type: mimeType });
+
+          stopLevelMeter();
+          if (state.activeStream) {
+            state.activeStream.getTracks().forEach((t) => t.stop());
+            state.activeStream = null;
+          }
+
+          if (blob.size > 0) {
+            const url = URL.createObjectURL(blob);
+            addTransmission({
+              id: Date.now().toString(),
+              kind: 'voice',
+              sender: state.riderName,
+              url,
+              duration: durationSec.toFixed(1),
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            });
+          }
+        });
+
+        playChime('start');
+        recorder.start();
+        state.isRecording = true;
+        state.recordStartTime = Date.now();
+        startLevelMeter(stream);
+        setVisualState('talking');
+        renderRiders();
+
+        clearInterval(state.timerInterval);
+        state.timerInterval = setInterval(() => {
+          const elapsed = (Date.now() - state.recordStartTime) / 1000;
+          timerLabel.textContent = elapsed.toFixed(1) + 's';
+        }, 100);
+      } catch (err) {
+        state.isHolding = false;
+        state.isRecording = false;
+        stopLevelMeter();
+        setVisualState('idle');
+        renderRiders();
+        showMicNotice('Microphone access was blocked or unavailable. Allow mic permission in your browser, or test with Quick Ride Alerts and simulated chimes.');
+      }
+    }
+
+    function stopTalking() {
+      if (!state.isHolding && !state.isRecording) return;
+      state.isHolding = false;
+      clearInterval(state.timerInterval);
+
+      if (state.isRecording && state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
+        state.isRecording = false;
+        playChime('end');
+        state.mediaRecorder.stop();
+      } else {
+        state.isRecording = false;
+        stopLevelMeter();
+      }
+
+      setVisualState('idle');
+      renderRiders();
+    }
+
+    // =========================================================================
+    // PART 7: QUICK BIKE RIDE ALERTS (TONE + SPEECH + OFFLINE P2P BROADCAST)
+    // =========================================================================
+    function triggerQuickAlert(alertKey) {
+      const cfg = ALERT_CONFIG[alertKey];
+      if (!cfg) return;
+
+      playToneSequence(cfg.tone);
+      flashMeterBurst();
+
+      // If connected to a nearby rider via Offline Wi-Fi WebRTC, broadcast it live!
+      if (state.dataChannel && state.dataChannel.readyState === 'open') {
+        try {
+          state.dataChannel.send(JSON.stringify({
+            type: 'alert',
+            alertKey,
+            sender: state.riderName
+          }));
+        } catch (e) {}
+      }
+
+      if (state.spokenAlerts && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance(cfg.speech);
+          utter.rate = 1.05;
+          window.speechSynthesis.speak(utter);
+        } catch (e) {}
+      }
+
+      statusText.textContent = `Broadcast sent: ${cfg.label} (${state.roomCode})`;
+      setTimeout(() => {
+        if (!state.isRecording) setVisualState('idle');
+      }, 2200);
+
+      addTransmission({
+        id: Date.now().toString(),
+        kind: 'alert',
+        alertKey,
+        label: cfg.label,
+        sender: state.riderName,
+        url: null,
+        duration: 'Alert',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
+    }
+
+    // =========================================================================
+    // PART 8: UI RENDERING (VISUAL STATES, ROSTER & COMMS LOG)
+    // =========================================================================
+    function setVisualState(mode) {
+      if (mode === 'talking') {
+        const isHandsFree = state.mode === 'handsfree';
+        pttButton.classList.remove('border-slate-700', 'talking', 'live-open', 'border-red-500', 'border-emerald-400');
+        pttButton.classList.add(isHandsFree ? 'live-open' : 'talking', isHandsFree ? 'border-emerald-400' : 'border-red-500');
+        micIcon.classList.remove('text-emerald-400', 'text-amber-400', 'text-red-400');
+        micIcon.classList.add(isHandsFree ? 'text-emerald-300' : 'text-red-400');
+        pulseRing.classList.remove('hidden', 'border-red-500/70', 'border-emerald-400/75');
+        pulseRing.classList.add(isHandsFree ? 'border-emerald-400/75' : 'border-red-500/70');
+        pttLabel.textContent = isHandsFree ? 'MIC LIVE · TAP MUTE' : 'BROADCASTING...';
+        statusText.textContent = isHandsFree
+          ? `Open Mic Live on ${state.roomCode}`
+          : `Talking on ${state.roomCode} — Release to send`;
+        statusLed.className = isHandsFree
+          ? 'w-3.5 h-3.5 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.95)] shrink-0 transition-colors'
+          : 'w-3.5 h-3.5 rounded-full bg-red-500 shadow-[0_0_14px_rgba(239,68,68,0.95)] shrink-0 transition-colors';
+      } else if (mode === 'connecting') {
+        micIcon.classList.remove('text-emerald-400', 'text-red-400');
+        micIcon.classList.add('text-amber-400');
+        pttLabel.textContent = 'OPENING MIC...';
+        statusText.textContent = 'Requesting microphone access...';
+        statusLed.className = 'w-3.5 h-3.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.85)] shrink-0 transition-colors';
+      } else {
+        pttButton.classList.remove('talking', 'live-open', 'border-red-500', 'border-emerald-400');
+        pttButton.classList.add('border-slate-700');
+        micIcon.classList.remove('text-red-400', 'text-amber-400', 'text-emerald-300');
+        micIcon.classList.add('text-emerald-400');
+        pulseRing.classList.add('hidden');
+        pttLabel.textContent = state.mode === 'handsfree' ? 'TAP TO GO LIVE' : 'HOLD TO TALK';
+        timerLabel.textContent = '0.0s';
+        statusText.textContent = state.mode === 'handsfree'
+          ? 'Standby — Tap big button for hands-free live mic'
+          : 'Ready — Hold button or Spacebar to talk';
+        statusLed.className = 'w-3.5 h-3.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.85)] shrink-0 transition-colors';
+      }
+    }
+
+    function setTalkMode(newMode) {
+      if (state.isRecording || state.isHolding) {
+        stopTalking();
+      }
+      state.mode = newMode;
+      const isHandsFree = newMode === 'handsfree';
+
+      modeHandsFreeBtn.className = isHandsFree
+        ? 'px-3 py-2 rounded-xl text-xs font-semibold transition-colors bg-emerald-500 text-slate-950'
+        : 'px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-slate-400 hover:text-slate-200';
+      modePttBtn.className = !isHandsFree
+        ? 'px-3 py-2 rounded-xl text-xs font-semibold transition-colors bg-emerald-500 text-slate-950'
+        : 'px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-slate-400 hover:text-slate-200';
+
+      setVisualState('idle');
+    }
+
+    function showMicNotice(message) {
+      micNoticeText.textContent = message;
+      micNotice.classList.remove('hidden');
+    }
+
+    function renderRiders() {
+      riderList.innerHTML = '';
+      const total = 1 + (state.p2pConnected ? 1 : 0) + state.practiceRiders.length;
+      riderCount.textContent = String(total);
+
+      // 1. Current User Row
+      const selfLi = document.createElement('li');
+      selfLi.className = 'flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800';
+      selfLi.innerHTML = `
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="w-2.5 h-2.5 rounded-full ${state.isRecording ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]' : 'bg-slate-600'} shrink-0"></span>
+          <div class="min-w-0">
+            <p class="text-xs font-semibold text-white truncate">${escapeHtml(state.riderName)} <span class="text-slate-400 font-normal">(You)</span></p>
+            <p class="text-[11px] text-slate-500">${state.isRecording ? 'Transmitting live' : 'Listening on ' + escapeHtml(state.roomCode)}</p>
+          </div>
+        </div>
+        <span class="px-2.5 py-1 rounded-full text-[11px] font-medium ${state.isRecording ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}">
+          ${state.isRecording ? 'Live' : 'Standby'}
+        </span>
+      `;
+      riderList.appendChild(selfLi);
+
+      // 2. Live Offline Wi-Fi Peer (when connected)
+      if (state.p2pConnected) {
+        const peerLi = document.createElement('li');
+        peerLi.className = 'flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-sky-500/10 border border-sky-500/30';
+        peerLi.innerHTML = `
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] shrink-0"></span>
+            <div class="min-w-0">
+              <p class="text-xs font-semibold text-sky-100 truncate">Paired Wi-Fi Rider</p>
+              <p class="text-[11px] text-sky-300/80">Direct offline P2P voice active</p>
+            </div>
+          </div>
+          <span class="px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Wi-Fi P2P</span>
+        `;
+        riderList.appendChild(peerLi);
+      }
+
+      // 3. Practice Riders (if added by user)
+      state.practiceRiders.forEach((rider) => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800';
+
+        const left = document.createElement('div');
+        left.className = 'flex items-center gap-2.5 min-w-0';
+        left.innerHTML = `
+          <span class="w-2.5 h-2.5 rounded-full ${rider.muted ? 'bg-slate-600' : 'bg-amber-400'} shrink-0"></span>
+          <div class="min-w-0">
+            <p class="text-xs font-medium text-slate-200 truncate">${escapeHtml(rider.name)} <span class="text-slate-500">· ${escapeHtml(rider.role)}</span></p>
+            <p class="text-[11px] text-slate-500">${rider.muted ? 'Muted by you' : 'Practice rider · Ready'}</p>
+          </div>
+        `;
+
+        const actions = document.createElement('div');
+        actions.className = 'flex items-center gap-1.5 shrink-0';
+
+        const muteBtn = document.createElement('button');
+        muteBtn.type = 'button';
+        muteBtn.className = rider.muted
+          ? 'px-2.5 py-1 rounded-lg bg-red-500/15 text-red-300 border border-red-500/30 text-[11px] font-medium'
+          : 'px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-medium';
+        muteBtn.textContent = rider.muted ? 'Unmute' : 'Mute';
+        muteBtn.addEventListener('click', () => {
+          rider.muted = !rider.muted;
+          renderRiders();
+        });
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'px-2 py-1 rounded-lg text-slate-500 hover:text-slate-200 text-xs';
+        removeBtn.title = 'Remove practice rider';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', () => {
+          state.practiceRiders = state.practiceRiders.filter((r) => r.id !== rider.id);
+          renderRiders();
+        });
+
+        actions.appendChild(muteBtn);
+        actions.appendChild(removeBtn);
+        li.appendChild(left);
+        li.appendChild(actions);
+        riderList.appendChild(li);
+      });
+    }
+
+    function playTransmission(item) {
+      if (item.kind === 'alert' && ALERT_CONFIG[item.alertKey]) {
+        playToneSequence(ALERT_CONFIG[item.alertKey].tone);
+        if (state.spokenAlerts && 'speechSynthesis' in window) {
+          try {
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(new SpeechSynthesisUtterance(ALERT_CONFIG[item.alertKey].speech));
+          } catch (e) {}
+        }
+        return;
+      }
+      if (item.kind === 'demo') {
+        playChime('start');
+        setTimeout(() => playChime('end'), 280);
+        return;
+      }
+      if (item.url) {
+        const audio = new Audio(item.url);
+        audio.play().catch(() => {});
+      }
+    }
+
+    function addTransmission(item) {
+      state.transmissions.unshift(item);
+      renderTransmissions();
+
+      if (state.autoPlay && item.kind === 'voice') {
+        playTransmission(item);
+      }
+    }
+
+    function renderTransmissions() {
+      transmissionList.innerHTML = '';
+
+      if (state.transmissions.length === 0) {
+        emptyLog.classList.remove('hidden');
+        clearLogBtn.classList.add('hidden');
+        return;
+      }
+
+      emptyLog.classList.add('hidden');
+      clearLogBtn.classList.remove('hidden');
+
+      state.transmissions.forEach((item) => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800';
+
+        const meta = document.createElement('div');
+        meta.className = 'min-w-0';
+
+        const title = document.createElement('p');
+        title.className = 'text-xs font-medium text-slate-200 truncate';
+        if (item.kind === 'alert') {
+          title.textContent = `${item.sender}: ${item.label}`;
+        } else if (item.kind === 'demo') {
+          title.textContent = `${item.sender}: Simulated Chime Test`;
+        } else {
+          title.textContent = `${item.sender} · Voice Clip`;
+        }
+
+        const sub = document.createElement('p');
+        sub.className = 'text-[11px] text-slate-500';
+        sub.textContent = item.kind === 'alert'
+          ? `${item.time} · Quick Alert`
+          : `${item.time} · ${item.duration}s`;
+
+        meta.appendChild(title);
+        meta.appendChild(sub);
+
+        const playBtn = document.createElement('button');
+        playBtn.type = 'button';
+        playBtn.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-medium border border-emerald-500/30 transition-colors shrink-0';
+        playBtn.textContent = 'Replay';
+        playBtn.addEventListener('click', () => playTransmission(item));
+
+        li.appendChild(meta);
+        li.appendChild(playBtn);
+        transmissionList.appendChild(li);
+      });
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function copyTextWithFeedback(text, buttonEl, defaultLabel) {
+      const done = () => {
+        buttonEl.textContent = 'Copied!';
+        setTimeout(() => { buttonEl.textContent = defaultLabel; }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+      } else {
+        fallbackCopy(text, done);
+      }
+    }
+
+    function fallbackCopy(text, onDone) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      onDone();
+    }
+
+    // =========================================================================
+    // PART 9: EVENT LISTENERS
+    // =========================================================================
+    modeHandsFreeBtn.addEventListener('click', () => setTalkMode('handsfree'));
+    modePttBtn.addEventListener('click', () => setTalkMode('ptt'));
+
+    pttButton.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (state.mode === 'handsfree') {
+        if (state.isRecording || state.isHolding) stopTalking();
+        else startTalking();
+      } else {
+        pttButton.setPointerCapture(e.pointerId);
+        startTalking();
+      }
+    });
+
+    pttButton.addEventListener('pointerup', () => {
+      if (state.mode === 'ptt') stopTalking();
+    });
+
+    pttButton.addEventListener('pointercancel', () => {
+      if (state.mode === 'ptt') stopTalking();
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && !e.repeat) {
+        const tag = document.activeElement ? document.activeElement.tagName : '';
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+          e.preventDefault();
+          if (state.mode === 'handsfree') {
+            if (state.isRecording || state.isHolding) stopTalking();
+            else startTalking();
+          } else {
+            startTalking();
+          }
+        }
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'Space' && state.mode === 'ptt') {
+        stopTalking();
+      }
+    });
+
+    windToggle.addEventListener('click', () => {
+      state.windFilterEnabled = !state.windFilterEnabled;
+      windToggle.setAttribute('aria-pressed', String(state.windFilterEnabled));
+      windToggle.className = state.windFilterEnabled
+        ? 'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-colors'
+        : 'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition-colors';
+      windLabel.textContent = state.windFilterEnabled ? 'Wind Filter' : 'Wind Off';
+      meterCaption.textContent = state.windFilterEnabled
+        ? 'Voice level meter · Wind filter active'
+        : 'Voice level meter · Wind filter off';
+    });
+
+    chimeToggle.addEventListener('click', () => {
+      state.chimeEnabled = !state.chimeEnabled;
+      chimeToggle.setAttribute('aria-pressed', String(state.chimeEnabled));
+      chimeLabel.textContent = state.chimeEnabled ? 'Chime On' : 'Chime Off';
+      chimeIconOn.classList.toggle('hidden', !state.chimeEnabled);
+      chimeIconOff.classList.toggle('hidden', state.chimeEnabled);
+      if (state.chimeEnabled) playChime('start');
+    });
+
+    autoPlayToggle.addEventListener('change', (e) => {
+      state.autoPlay = e.target.checked;
+    });
+
+    spokenAlertsToggle.addEventListener('change', (e) => {
+      state.spokenAlerts = e.target.checked;
+    });
+
+    quickAlertButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        triggerQuickAlert(btn.getAttribute('data-alert'));
+      });
+    });
+
+    copyCodeBtn.addEventListener('click', () => {
+      copyTextWithFeedback(state.roomCode, copyCodeBtn, 'Copy Code');
+    });
+
+    toggleRoomEditBtn.addEventListener('click', () => {
+      roomEditPanel.classList.toggle('hidden');
+    });
+
+    roomEditPanel.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const nameVal = riderNameInput.value.trim();
+      const codeVal = roomCodeInput.value.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+      if (nameVal) state.riderName = nameVal;
+      if (codeVal) state.roomCode = codeVal;
+      roomCodeBadge.textContent = state.roomCode;
+      roomCodeInput.value = state.roomCode;
+      roomEditPanel.classList.add('hidden');
+      renderRiders();
+    });
+
+    // Offline Wi-Fi Pairing Listeners
+    toggleOfflinePairBtn.addEventListener('click', () => {
+      offlinePairPanel.classList.toggle('hidden');
+    });
+
+    hostCreateOfferBtn.addEventListener('click', async () => {
+      p2pFeedback.textContent = 'Generating offline local Wi-Fi invite code...';
+      const pc = await initLocalPeerConnection();
+      if (!pc) return;
+      try {
+        const channel = pc.createDataChannel('intercom-alerts');
+        setupDataChannel(channel);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await waitForIceGathering(pc);
+        localSignalBox.value = encodeSignal(pc.localDescription);
+        p2pFeedback.textContent = 'Invite code ready! Send it to the nearby rider, then paste their Reply Code below and tap Connect.';
+      } catch (err) {
+        p2pFeedback.textContent = 'Could not create offline invite code in this browser.';
+      }
+    });
+
+    guestCreateAnswerBtn.addEventListener('click', async () => {
+      const raw = remoteSignalBox.value.trim();
+      if (!raw) {
+        p2pFeedback.textContent = 'Paste the Host Invite Code into the box above first.';
+        return;
+      }
+      p2pFeedback.textContent = 'Creating reply code for local Wi-Fi link...';
+      const pc = await initLocalPeerConnection();
+      if (!pc) return;
+      try {
+        const offerDesc = decodeSignal(raw);
+        await pc.setRemoteDescription(offerDesc);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await waitForIceGathering(pc);
+        localSignalBox.value = encodeSignal(pc.localDescription);
+        p2pFeedback.textContent = 'Reply code ready! Share it back with the Host so they can tap Connect.';
+      } catch (err) {
+        p2pFeedback.textContent = 'Invalid Host Invite Code. Make sure you copied the full code.';
+      }
+    });
+
+    connectRemoteBtn.addEventListener('click', async () => {
+      const raw = remoteSignalBox.value.trim();
+      if (!state.peerConnection) {
+        p2pFeedback.textContent = 'Tap "1. Host: Create Code" first before pasting a Reply Code.';
+        return;
+      }
+      if (!raw) {
+        p2pFeedback.textContent = 'Paste the other rider\'s Reply Code first.';
+        return;
+      }
+      try {
+        const answerDesc = decodeSignal(raw);
+        await state.peerConnection.setRemoteDescription(answerDesc);
+        p2pFeedback.textContent = 'Linking over local Wi-Fi...';
+      } catch (err) {
+        p2pFeedback.textContent = 'Invalid Reply Code. Make sure you copied the full reply.';
+      }
+    });
+
+    copySignalBtn.addEventListener('click', () => {
+      if (!localSignalBox.value) return;
+      copyTextWithFeedback(localSignalBox.value, copySignalBtn, 'Copy');
+    });
+
+    disconnectP2pBtn.addEventListener('click', () => {
+      closeP2pConnection(true);
+    });
+
+    micSelect.addEventListener('change', (e) => {
+      state.selectedMicId = e.target.value;
+    });
+
+    refreshMicsBtn.addEventListener('click', () => {
+      refreshAudioInputs();
+      refreshMicsBtn.textContent = 'Done';
+      setTimeout(() => { refreshMicsBtn.textContent = 'Scan'; }, 1000);
+    });
+
+    addPracticeRiderBtn.addEventListener('click', () => {
+      const preset = PRACTICE_ROSTER_PRESETS[state.practiceIndex % PRACTICE_ROSTER_PRESETS.length];
+      state.practiceIndex += 1;
+      state.practiceRiders.push({
+        id: 'rider-' + Date.now() + '-' + state.practiceIndex,
+        name: preset.name,
+        role: preset.role,
+        muted: false
+      });
+      renderRiders();
+    });
+
+    demoTestBtn.addEventListener('click', () => {
+      playChime('start');
+      setTimeout(() => playChime('end'), 280);
+      flashMeterBurst();
+      addTransmission({
+        id: Date.now().toString(),
+        kind: 'demo',
+        sender: state.riderName,
+        url: null,
+        duration: '0.4',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
+    });
+
+    clearLogBtn.addEventListener('click', () => {
+      state.transmissions.forEach((item) => {
+        if (item.url) URL.revokeObjectURL(item.url);
+      });
+      state.transmissions = [];
+      renderTransmissions();
+    });
+
+    // Initial render
+    renderRiders();
+    refreshAudioInputs();
+  </script>
+</body>
+</html>
